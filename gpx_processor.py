@@ -17,31 +17,50 @@ def find_bbox_amenities(api, s,w,n,e):
     );
     out center;
     """
-    result = api.query(query)
-    return result.nodes
+    try:
+        result = api.query(query)
+        current_app.logger.debug('OSM-Abfrage erfolgreich - '+str(len(result.nodes))+' Orte gefunden')
+        return result.nodes
+    except Exception as e:
+        current_app.logger.error(f"Error querying OSM: {str(e)}")
+        return []
 
 def unique_waypoints(amenities, track_points, waypoints, radius, progress_callback=None):
 # Wegpunkte sammeln
     current_app.logger.debug('Suche im '+str(radius)+' Radius')
     current_point = 0
     
+    ref_trkpt = {}
     total_points = len(track_points)
     
     for lat, lon in track_points:
+        amenitycount=0
         for node in amenities:
-            if (geopy.distance.geodesic((lat,lon), (node.lat,node.lon)).km<radius):
+            dist = geopy.distance.geodesic((lat,lon), (node.lat,node.lon)).km
+            if (dist<radius):
                 waypoint = {
                     'name': node.tags.get('name', 'Unknown'),
                     'lat': node.lat,
                     'lon': node.lon,
                     'type': node.tags.get('amenity', node.tags.get('shop', 'Unknown'))
                 }
-                if (waypoint not in waypoints):
-                    waypoints.append(waypoint)
+                if (amenitycount not in ref_trkpt):
+                    ref_trkpt[amenitycount] = { 'wp': waypoint, 'lat': lat, 'lon': lon, 'dist': dist}
                     current_app.logger.debug('Watt gefunden für Trackpoint '+str(current_point)+' ' + waypoint['name'] +'\n')
+                else:
+                    if (dist<ref_trkpt[amenitycount]['dist']):
+                        ref_trkpt[amenitycount] = { 'wp': waypoint, 'lat': lat, 'lon': lon, 'dist': dist}
+                        current_app.logger.debug('Trackpoint '+str(current_point)+' ist näher an ' + waypoint['name'] +'\n')
+            amenitycount+=1    
         current_point += 1
         if progress_callback:
             progress_callback(current_point, total_points)
+    for amn in ref_trkpt:
+        wp = ref_trkpt[amn]['wp']
+        wp['lat']=ref_trkpt[amn]['lat']
+        wp['lon']=ref_trkpt[amn]['lon']
+        wp['name']=wp['name']+': '+str(round(ref_trkpt[amn]['dist'],1))+'km'
+        waypoints.append(wp)
     return waypoints
 
 def max_waypoint_dist(waypoints):
