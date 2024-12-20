@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GPX File Processor</title>
+    <style>
+        .progress-container {
+            width: 100%;
+            max-width: 500px;
+            margin: 20px auto;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress {
+            width: 0%;
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            text-align: center;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload GPX File</h1>
+    <form id="uploadForm" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".gpx">
+        <input type="submit" value="Upload">
+    </form>
+
+    <div class="progress-container" id="progressContainer">
+        <div class="progress-bar">
+            <div class="progress" id="progressBar"></div>
+        </div>
+        <div class="progress-text" id="progressText">Processing: 0/0 points</div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').onsubmit = function(e) {
+            e.preventDefault();
+            
+            // Show progress container
+            document.getElementById('progressContainer').style.display = 'block';
+            
+            // Start progress monitoring
+            const eventSource = new EventSource('/progress');
+            eventSource.onmessage = function(e) {
+                const data = JSON.parse(e.data);
+                const percent = data.total > 0 ? (data.current / data.total) * 100 : 0;
+                
+                document.getElementById('progressBar').style.width = percent + '%';
+                document.getElementById('progressText').textContent = 
+                    `Processing: ${data.current}/${data.total} points`;
+                
+                if (data.current >= data.total && data.total > 0) {
+                    eventSource.close();
+                }
+            };
+            
+            // Submit form
+            const formData = new FormData(this);
+            fetch('/', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'enhanced_' + formData.get('file').name;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.getElementById('progressContainer').style.display = 'none';
+                eventSource.close();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error processing file');
+                document.getElementById('progressContainer').style.display = 'none';
+                eventSource.close();
+            });
+        };
+    </script>
+</body>
+</html> 
